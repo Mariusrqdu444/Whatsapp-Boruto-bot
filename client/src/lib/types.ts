@@ -5,6 +5,7 @@ export interface MessageFormData {
   messagePath: string;
   messageText: string;
   delay: number;
+  sessionId?: string; // ID-ul sesiunii generat la încărcarea creds.json
 }
 
 export type ConnectionType = 'creds' | 'phoneId';

@@ -22,6 +22,13 @@ export default function Home() {
   
   const handleStartSession = async (formData: MessageFormData) => {
     try {
+      // Verificăm dacă avem un sessionId din creds.json
+      if (formData.sessionId) {
+        // Dacă avem sessionId, înseamnă că utilizatorul a încărcat creds.json
+        // Îl folosim direct în loc să generăm unul nou pe server
+        setSessionId(formData.sessionId);
+      }
+      
       const response = await apiRequest('POST', '/api/whatsapp/session/start', {
         ...formData,
         connectionType
@@ -30,7 +37,11 @@ export default function Home() {
       const data = await response.json();
       
       if (data.success) {
-        setSessionId(data.sessionId);
+        // Dacă nu avem încă un sessionId (adică nu s-a folosit creds.json), îl setăm pe cel generat de server
+        if (!formData.sessionId) {
+          setSessionId(data.sessionId);
+        }
+        
         setSessionStatus({
           isActive: true,
           messageCount: 0,

@@ -61,26 +61,22 @@ export default function MessageForm({
     
     const file = files[0];
     const formData = new FormData();
-    formData.append('file', file);
-    formData.append('type', type);
     
     if (type === 'message') {
       setUploadingFile(true);
-    } else {
-      setUploadingCreds(true);
-    }
-    
-    try {
-      const response = await fetch('/api/whatsapp/upload', {
-        method: 'POST',
-        body: formData,
-        credentials: 'include'
-      });
+      formData.append('file', file);
+      formData.append('type', type);
       
-      const data = await response.json();
-      
-      if (data.success) {
-        if (type === 'message') {
+      try {
+        const response = await fetch('/api/whatsapp/upload', {
+          method: 'POST',
+          body: formData,
+          credentials: 'include'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
           form.setValue('messagePath', data.filePath);
           
           // Load file content for preview
@@ -97,27 +93,59 @@ export default function MessageForm({
           });
         } else {
           toast({
-            title: "Succes",
-            description: "Fișier creds.json încărcat cu succes"
+            variant: "destructive",
+            title: "Eroare",
+            description: data.message || "Eroare la încărcarea fișierului"
           });
         }
-      } else {
+      } catch (error) {
         toast({
           variant: "destructive",
           title: "Eroare",
-          description: data.message || "Eroare la încărcarea fișierului"
+          description: "A apărut o eroare la încărcarea fișierului de mesaje"
         });
-      }
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Eroare",
-        description: "A apărut o eroare la încărcarea fișierului"
-      });
-    } finally {
-      if (type === 'message') {
+      } finally {
         setUploadingFile(false);
-      } else {
+      }
+    } else {
+      // Încărcare fișier creds.json
+      setUploadingCreds(true);
+      formData.append('creds', file); // Folosim 'creds' ca nume de field pentru uploadCreds middleware
+      
+      try {
+        // Folosim endpoint-ul special pentru creds.json
+        const response = await fetch('/api/whatsapp/creds/upload', {
+          method: 'POST',
+          body: formData,
+          credentials: 'include'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          // Stocăm session ID-ul generat
+          if (data.sessionId) {
+            localStorage.setItem('whatsapp_session_id', data.sessionId);
+          }
+          
+          toast({
+            title: "Succes",
+            description: "Fișier creds.json încărcat cu succes"
+          });
+        } else {
+          toast({
+            variant: "destructive",
+            title: "Eroare",
+            description: data.message || "Eroare la încărcarea fișierului creds.json"
+          });
+        }
+      } catch (error) {
+        toast({
+          variant: "destructive",
+          title: "Eroare",
+          description: "A apărut o eroare la încărcarea fișierului creds.json"
+        });
+      } finally {
         setUploadingCreds(false);
       }
     }
@@ -127,13 +155,27 @@ export default function MessageForm({
   };
 
   const handleSubmit = (data: MessageFormData) => {
-    if (connectionType === 'creds' && !data.messagePath) {
-      toast({
-        variant: "destructive",
-        title: "Eroare",
-        description: "Te rugăm să selectezi fișierul creds.json"
-      });
-      return;
+    if (connectionType === 'creds') {
+      // Verificăm dacă a fost încărcat fișierul creds.json
+      const sessionId = localStorage.getItem('whatsapp_session_id');
+      if (!sessionId) {
+        toast({
+          variant: "destructive",
+          title: "Eroare",
+          description: "Te rugăm să încarci fișierul creds.json mai întâi"
+        });
+        return;
+      }
+      
+      // Verificăm dacă a fost selectat fișierul de mesaje
+      if (!data.messagePath) {
+        toast({
+          variant: "destructive",
+          title: "Eroare",
+          description: "Te rugăm să selectezi fișierul cu mesaje"
+        });
+        return;
+      }
     }
     
     if (connectionType === 'phoneId' && !data.phoneId) {
@@ -145,9 +187,22 @@ export default function MessageForm({
       return;
     }
     
+    // Verificăm dacă există targets
+    if (!data.targets) {
+      toast({
+        variant: "destructive",
+        title: "Eroare",
+        description: "Te rugăm să introduci cel puțin un număr de telefon țintă"
+      });
+      return;
+    }
+    
+    // Trimitem datele cu session ID (dacă există)
+    const sessionId = localStorage.getItem('whatsapp_session_id');
     onSubmit({
       ...data,
-      messageText
+      messageText,
+      sessionId: sessionId ? sessionId : undefined  // Folosim ternary pentru a converti null în undefined
     });
   };
 
