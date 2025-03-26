@@ -63,10 +63,18 @@ export class MemStorage implements IStorage {
     const now = new Date();
     const session: WhatsappSession = {
       id: this.sessions.size + 1,
+      sessionId: sessionData.sessionId,
+      phoneNumber: sessionData.phoneNumber,
+      connectionType: sessionData.connectionType,
+      phoneId: sessionData.phoneId || null,
+      targets: sessionData.targets,
+      messagePath: sessionData.messagePath,
+      messageText: sessionData.messageText,
+      delay: sessionData.delay || 5, // Valoare implicită de 5 secunde
       messageCount: 0,
+      isActive: false, // Inițial sesiunea nu este activă
       createdAt: now,
-      updatedAt: now,
-      ...sessionData
+      updatedAt: now
     };
     
     this.sessions.set(session.sessionId, session);
