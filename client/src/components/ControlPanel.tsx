@@ -24,7 +24,7 @@ export default function ControlPanel({
           <PlayIcon className="mr-1" size={16} />
           START MESSAGING
         </Button>
-        
+
         <Button
           variant="destructive"
           className="rounded-full"
