@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { PlayIcon, SquareIcon } from "lucide-react";
+import { PlayIcon, StopCircle } from "lucide-react";
 
 interface ControlPanelProps {
   isSessionActive: boolean;
@@ -31,7 +31,7 @@ export default function ControlPanel({
           onClick={onStopMessaging}
           disabled={!isSessionActive}
         >
-          <SquareIcon className="mr-1" size={16} />
+          <StopCircle className="mr-1" size={16} />
           STOP MESSAGING
         </Button>
       </div>
