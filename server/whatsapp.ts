@@ -35,8 +35,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Definește locația unde sunt stocate fișierele de credențiale
+// Fiecare utilizator va avea propriul său director securizat
 const UPLOADS_DIR = path.join(process.cwd(), "uploads");
-const CREDS_FILE_PATH = path.join(process.cwd(), "attached_assets", "creds.json");
+const USER_SESSIONS_DIR = path.join(process.cwd(), "user_sessions");
 
 export class WhatsAppManager {
   private storage: IStorage;
@@ -205,72 +206,177 @@ export class WhatsAppManager {
     try {
       log(`Crearea clientului WhatsApp pentru sesiunea ${session.sessionId}`, "whatsapp");
       
-      // În mediul Replit, Puppeteer nu poate rula corect, așa că folosim un client simulat
-      // În locul clientului real WhatsApp, vom crea un obiect care simulează funcționalitățile
-      // necesare pentru demo
+      // Verificăm dacă suntem în mediul de producție
+      const isProduction = process.env.NODE_ENV === 'production';
+      
+      // În acest caz, userId este sessionId - în implementarea reală ar trebui să folosim un userId unic
+      const userId = session.sessionId;
+      
+      // Obținem calea către directorul utilizatorului
+      const userDir = path.join(USER_SESSIONS_DIR, userId);
+      
+      // Creăm directorul dacă nu există
+      try {
+        await fs.mkdir(userDir, { recursive: true });
+      } catch (err) {
+        log(`Eroare la crearea directorului pentru utilizator: ${err}`, "whatsapp");
+      }
+      
+      // Calea către fișierul cu credențiale încărcat de utilizator
+      const userCredsPath = path.join(userDir, 'creds.json');
       
       // Verificăm tipul de conexiune (creds sau phoneId)
       if (session.connectionType === 'creds') {
-        // Verificăm dacă există fișierul creds.json
+        // Verificăm dacă există fișierul creds.json pentru acest utilizator
         try {
-          await fs.access(CREDS_FILE_PATH);
-          log(`Utilizare fișier de credențiale din ${CREDS_FILE_PATH}`, "whatsapp");
+          await fs.access(userCredsPath);
+          log(`Utilizare fișier de credențiale pentru sesiunea ${session.sessionId}`, "whatsapp");
           
           // Citim fișierul de credențiale pentru a confirma că există
-          const creds = JSON.parse(await fs.readFile(CREDS_FILE_PATH, 'utf-8'));
-          log(`Credențiale încărcate cu succes`, "whatsapp");
+          const creds = JSON.parse(await fs.readFile(userCredsPath, 'utf-8'));
+          log(`Credențiale încărcate cu succes pentru sesiunea ${session.sessionId}`, "whatsapp");
           
-          // Creem un client simulat
-          const simulatedClient = {
-            // Metoda sendMessage simulată
-            sendMessage: async (to: string, message: string) => {
-              log(`[SIMULARE] Mesaj trimis către ${to}: ${message}`, "whatsapp");
-              return { id: { id: Math.random().toString(36).substring(7) } };
-            },
-            // Metoda destroy
-            destroy: async () => {
-              log(`[SIMULARE] Client WhatsApp închis`, "whatsapp");
-              return true;
-            },
-            // Emitem evenimentul ready imediat
-            initialize: async () => {
-              log(`[SIMULARE] Client WhatsApp inițializat și gata de utilizare`, "whatsapp");
-              return true;
-            }
-          };
-          
-          log(`Client WhatsApp simulat creat pentru demonstrație (creds)`, "whatsapp");
-          return simulatedClient;
-          
+          if (isProduction) {
+            // În producție, inițializăm biblioteca și creăm un client real
+            await initWhatsAppLibrary();
+            
+            // Creăm clientul real cu credențialele încărcate
+            const client = new Client({
+              puppeteer: {
+                headless: true,
+                args: [
+                  '--no-sandbox',
+                  '--disable-setuid-sandbox',
+                  '--disable-dev-shm-usage',
+                  '--disable-accelerated-2d-canvas',
+                  '--no-first-run',
+                  '--no-zygote',
+                  '--disable-gpu'
+                ]
+              },
+              session: creds,
+              restartOnAuthFail: true
+            });
+            
+            // Configurăm event listeners
+            client.on('qr', (qr: string) => {
+              log(`Cod QR generat pentru sesiunea ${session.sessionId}`, "whatsapp");
+            });
+            
+            client.on('ready', () => {
+              log(`Clientul WhatsApp este pregătit pentru sesiunea ${session.sessionId}`, "whatsapp");
+            });
+            
+            client.on('disconnected', (reason: string) => {
+              log(`Clientul WhatsApp deconectat pentru sesiunea ${session.sessionId}: ${reason}`, "whatsapp");
+            });
+            
+            client.on('authenticated', () => {
+              log(`Clientul WhatsApp autentificat pentru sesiunea ${session.sessionId}`, "whatsapp");
+            });
+            
+            // Inițializăm clientul
+            log(`Inițializare client WhatsApp pentru sesiunea ${session.sessionId}`, "whatsapp");
+            await client.initialize();
+            
+            return client;
+          } else {
+            // În mediul de dezvoltare, folosim clientul simulat
+            const simulatedClient = {
+              sendMessage: async (to: string, message: string) => {
+                log(`[SIMULARE] Mesaj trimis către ${to}: ${message}`, "whatsapp");
+                return { id: { id: Math.random().toString(36).substring(7) } };
+              },
+              destroy: async () => {
+                log(`[SIMULARE] Client WhatsApp închis`, "whatsapp");
+                return true;
+              },
+              initialize: async () => {
+                log(`[SIMULARE] Client WhatsApp inițializat și gata de utilizare`, "whatsapp");
+                return true;
+              }
+            };
+            
+            log(`Client WhatsApp simulat creat pentru demonstrație (creds)`, "whatsapp");
+            return simulatedClient;
+          }
         } catch (err) {
-          log(`Eroare la accesarea fișierului de credențiale: ${err}`, "whatsapp");
-          throw new Error(`Nu s-a putut accesa fișierul de credențiale: ${err}`);
+          log(`Eroare la accesarea fișierului de credențiale pentru sesiunea ${session.sessionId}: ${err}`, "whatsapp");
+          throw new Error(`Nu s-a putut accesa fișierul de credențiale pentru sesiunea ${session.sessionId}. Te rugăm să încarci un fișier creds.json valid.`);
         }
       } else if (session.connectionType === 'phoneId' && session.phoneId) {
         log(`Utilizare phoneId ${session.phoneId} pentru conectare`, "whatsapp");
         
-        // Creem un client simulat pentru phoneId
-        const simulatedClient = {
-          // Metoda sendMessage simulată
-          sendMessage: async (to: string, message: string) => {
-            log(`[SIMULARE] Mesaj trimis către ${to} folosind phoneId ${session.phoneId}: ${message}`, "whatsapp");
-            return { id: { id: Math.random().toString(36).substring(7) } };
-          },
-          // Metoda destroy
-          destroy: async () => {
-            log(`[SIMULARE] Client WhatsApp închis (phoneId)`, "whatsapp");
-            return true;
-          },
-          // Emitem evenimentul ready imediat
-          initialize: async () => {
-            log(`[SIMULARE] Client WhatsApp inițializat și gata de utilizare (phoneId)`, "whatsapp");
-            return true;
+        if (isProduction) {
+          // În producție, conectarea prin phoneId ar trebui să utilizeze o abordare diferită
+          // Posibil prin Meta Business API sau altă metodă
+          // Deocamdată folosim același mecanism ca pentru creds
+          try {
+            await fs.access(userCredsPath);
+            const creds = JSON.parse(await fs.readFile(userCredsPath, 'utf-8'));
+            
+            await initWhatsAppLibrary();
+            
+            const client = new Client({
+              puppeteer: {
+                headless: true,
+                args: [
+                  '--no-sandbox',
+                  '--disable-setuid-sandbox',
+                  '--disable-dev-shm-usage',
+                  '--disable-accelerated-2d-canvas',
+                  '--no-first-run',
+                  '--no-zygote',
+                  '--disable-gpu'
+                ]
+              },
+              session: creds,
+              restartOnAuthFail: true
+            });
+            
+            // Configurăm event listeners
+            client.on('qr', (qr: string) => {
+              log(`Cod QR generat pentru sesiunea ${session.sessionId} (phoneId)`, "whatsapp");
+            });
+            
+            client.on('ready', () => {
+              log(`Clientul WhatsApp este pregătit pentru sesiunea ${session.sessionId} (phoneId)`, "whatsapp");
+            });
+            
+            client.on('disconnected', (reason: string) => {
+              log(`Clientul WhatsApp deconectat pentru sesiunea ${session.sessionId} (phoneId): ${reason}`, "whatsapp");
+            });
+            
+            client.on('authenticated', () => {
+              log(`Clientul WhatsApp autentificat pentru sesiunea ${session.sessionId} (phoneId)`, "whatsapp");
+            });
+            
+            await client.initialize();
+            return client;
+          } catch (err) {
+            log(`Eroare la accesarea fișierului de credențiale pentru phoneId: ${err}`, "whatsapp");
+            throw new Error(`Nu s-a putut accesa fișierul de credențiale pentru phoneId. Te rugăm să încarci un fișier creds.json valid.`);
           }
-        };
-        
-        log(`Client WhatsApp simulat creat pentru demonstrație (phoneId)`, "whatsapp");
-        return simulatedClient;
-        
+        } else {
+          // În dezvoltare, folosim un client simulat
+          const simulatedClient = {
+            sendMessage: async (to: string, message: string) => {
+              log(`[SIMULARE] Mesaj trimis către ${to} folosind phoneId ${session.phoneId}: ${message}`, "whatsapp");
+              return { id: { id: Math.random().toString(36).substring(7) } };
+            },
+            destroy: async () => {
+              log(`[SIMULARE] Client WhatsApp închis (phoneId)`, "whatsapp");
+              return true;
+            },
+            initialize: async () => {
+              log(`[SIMULARE] Client WhatsApp inițializat și gata de utilizare (phoneId)`, "whatsapp");
+              return true;
+            }
+          };
+          
+          log(`Client WhatsApp simulat creat pentru demonstrație (phoneId)`, "whatsapp");
+          return simulatedClient;
+        }
       } else {
         throw new Error('Tipul de conexiune invalid sau phoneId lipsă');
       }

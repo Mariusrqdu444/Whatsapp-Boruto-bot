@@ -48,6 +48,9 @@ const upload = multer({ storage: storage_config });
 // Initialize WhatsApp manager
 const whatsAppManager = new WhatsAppManager(storage);
 
+// Definim directorul pentru sesiunile utilizatorilor
+const USER_SESSIONS_DIR = path.join(process.cwd(), "user_sessions");
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Create HTTP server
   const httpServer = createServer(app);
@@ -56,6 +59,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   await createDirIfNotExists(uploadsDir);
   await createDirIfNotExists(credsDir);
   await createDirIfNotExists(messagesDir);
+  await createDirIfNotExists(USER_SESSIONS_DIR);
   
   // File upload endpoint
   app.post('/api/whatsapp/upload', upload.single('file'), async (req: Request, res: Response) => {
