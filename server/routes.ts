@@ -246,6 +246,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     }
   });
+  
+  // Upload creds.json endpoint
+  const uploadCredsStorage = multer.diskStorage({
+    destination: async (req, file, cb) => {
+      const sessionId = req.body.sessionId || nanoid();
+      const sessionDir = path.join(USER_SESSIONS_DIR, sessionId);
+      
+      try {
+        await createDirIfNotExists(sessionDir);
+        cb(null, sessionDir);
+      } catch (err) {
+        cb(new Error(`Eroare la crearea directorului pentru sesiune: ${err}`), '');
+      }
+    },
+    filename: (req, file, cb) => {
+      // Salvăm întotdeauna ca creds.json
+      cb(null, 'creds.json');
+    }
+  });
+  
+  const uploadCreds = multer({ storage: uploadCredsStorage });
+  
+  // Endpoint pentru încărcarea fișierului creds.json
+  app.post('/api/whatsapp/creds/upload', uploadCreds.single('creds'), async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          message: "Fișierul creds.json lipsește"
+        });
+      }
+      
+      // Generăm sau folosim sessionId
+      const sessionId = req.body.sessionId || nanoid();
+      const sessionDir = path.join(USER_SESSIONS_DIR, sessionId);
+      const credsPath = path.join(sessionDir, 'creds.json');
+      
+      // Verificăm dacă fișierul este un JSON valid
+      try {
+        const fileContent = await fs.readFile(credsPath, 'utf-8');
+        JSON.parse(fileContent); // Verificăm dacă e JSON valid
+      } catch (err) {
+        await fs.unlink(credsPath).catch(e => console.error("Eroare la ștergerea fișierului invalid:", e));
+        return res.status(400).json({
+          success: false,
+          message: "Fișierul creds.json este invalid sau corupt"
+        });
+      }
+      
+      return res.status(200).json({
+        success: true,
+        message: "Fișierul creds.json a fost încărcat cu succes",
+        sessionId
+      });
+    } catch (err) {
+      console.error("Error uploading creds.json:", err);
+      return res.status(500).json({
+        success: false,
+        message: "Eroare la încărcarea fișierului creds.json"
+      });
+    }
+  });
 
   return httpServer;
 }
